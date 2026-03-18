@@ -94,8 +94,8 @@ def main():
         logging.error("Usage: python csv_to_parquet.py <tile_name>")
         sys.exit(1)
     
-    path = cfg['paths']['splitted_raw_metadata_dir']
-    parquet_path = cfg['paths']['tile_partitioned_parquet_raw_metadata_dir']
+    path = os.path.abspath(cfg['paths']['splitted_raw_metadata_dir'])
+    parquet_path = os.path.abspath(cfg['paths']['tile_partitioned_parquet_raw_metadata_dir'])
     updated_after = datetime.fromisoformat(cfg['csv_split_params']['updated_after'])
     tile = sys.argv[1]
     logging.info(f"Processing CSV to Parquet conversion for tile: {tile}")
@@ -117,7 +117,7 @@ def main():
             files = None
     
     if files is None:
-        path = cfg['paths']['raw_metadata_dir']
+        path = os.path.abspath(cfg['paths']['raw_metadata_dir'])
         logging.debug(f"Searching in raw metadata directory: {path}")
         raw_file = f'metadata_unfiltered_{tile}.csv'
         if os.path.exists(os.path.join(path, raw_file)):

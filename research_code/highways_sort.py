@@ -1,21 +1,68 @@
 """Process and partition OSM highway data with geographic and tile information.
 
-This module filters road network (highway) data from OSM parquet files, adds
+This script filters road network (highway) data from OSM parquet files, adds
 geographic context (continent/country), assigns zoom-level tiles, and creates
 tile-partitioned output for efficient spatial queries.
 
-Workflow:
-1. Load OSM parquet files containing highway network data
-2. Filter for valid highways (LineString geometries, visible, latest versions)
-3. Add geographic classification (continent, country)
+**Workflow:**
+1. Load OSM parquet files containing highway network data with tags
+2. Filter for valid highways:
+   - LineString geometries only
+   - tags['highway'] field not NULL
+   - visible = TRUE (not deleted)
+   - latest = TRUE (most recent version)
+3. Perform spatial intersections:
+   - LEFT JOIN with continent polygons → adds continent column
+   - LEFT JOIN with country polygons → adds country column
 4. Assign zoom-level tiles to each segment
-5. Create tile-partitioned output structure (one directory per tile)
-6. Optionally chunk large tiles into multiple parquet files
+5. Create tile-partitioned output structure:
+   - One directory per tile: highways_{tile}/
+   - One parquet file per tile: highways_{osm_filename}
+6. Optional: chunk large tiles into multiple parquet files
 
-Configuration loaded from config.yaml for all parameters.
+**Configuration (config.yaml):**
+- params.zoom_level - Tile zoom level (must match other pipeline scripts)
+- paths.osm_data_dir - Input OSM data directory
+- paths.processed_osm_data_dir - Output directory for processed highways
+- filenames.continents_filename - Path to continent polygons (parquet)
+- filenames.country_filename - Path to country polygons (parquet)
+
+**Input Requirements:**
+OSM parquet must have columns:
+- geometry (WKB format)
+- tags (map/dict with 'highway', 'surface' keys)
+- geometry_type (VARCHAR: 'LineString')
+- visible (BOOLEAN)
+- latest (BOOLEAN)
+- xzcode (struct with zoom-encoded geometry)
+- contrib_id, country_iso_a3, osm_type, osm_id, length, centroid, bbox
+
+**Output:**
+Tile-partitioned parquet files with columns:
+- continent - Continent name (from intersection)
+- country - Country name (from intersection)
+- (all input columns)
+- z{zoom_level}_tiles - Tile identifier (e.g., z8_tiles)
+- osm_tags_highway - Highway type (primary, secondary, residential, etc.)
+- osm_tags_surface - Surface type (asphalt, concrete, gravel, etc.)
+
+**Features:**
+- DuckDB spatial operations for efficient processing
+- Retry logic with exponential backoff
+- Comprehensive logging at DEBUG, INFO, WARNING, ERROR levels
+- One file per tile for parallelizable downstream processing
+- Tile-partitioned output for efficient querying
+
+**Usage:**
+Run via bash automation script:
+    bash highways_sort_hpc.sh
+    
+Or manually for single OSM file:
+Called via highways_sort_hpc.sh for each OSM parquet file in parallel.
 """
 
 import os
+import sys
 import time
 import random
 import logging
@@ -31,6 +78,10 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+# Ensure handler flushes after each message (important for HPC batch jobs)
+for handler in logging.root.handlers:
+    if hasattr(handler, 'stream'):
+        handler.stream.flush()
 
 def filter_and_copy_file(osm_filepath, saving_filedir, zoom_level, continent_filename, country_filename, retries=5, sleep_time=0.5):
     """Filter OSM highway data and add geographic context.
@@ -51,14 +102,11 @@ def filter_and_copy_file(osm_filepath, saving_filedir, zoom_level, continent_fil
         True if successful, False on error.
     """
     logger.info(f"Starting filter and copy: {os.path.basename(osm_filepath)}")
+    sys.stdout.flush()
     if not os.path.exists(saving_filedir):
         os.makedirs(saving_filedir, exist_ok=True)
         logger.debug(f"Created output directory: {saving_filedir}")
 
-    logging.warning(f"{continent_filename}")
-    logging.warning(f"{country_filename}")
-    logging.warning(f"{osm_filepath}")
-    logging.warning(f"{os.getcwd()}")
     query = f"""
     COPY (
         WITH 
@@ -131,6 +179,7 @@ def filter_and_copy_file(osm_filepath, saving_filedir, zoom_level, continent_fil
                                             ORDER BY xzcode.code""").df().geometry_type)
                 conn.execute(query)
                 logger.info(f"Successfully filtered and copied: {os.path.basename(osm_filepath)}")
+                sys.stdout.flush()
                 break
             except Exception as err:
                 logger.warning(f"Attempt {attempt+1}/{retries} failed: {err}")
@@ -138,6 +187,7 @@ def filter_and_copy_file(osm_filepath, saving_filedir, zoom_level, continent_fil
         return True
     except Exception as err:
         logger.error(f"Error during extraction: {osm_filepath}: {err}", exc_info=True)
+        sys.stdout.flush()
         return False
     finally:
         if conn is not None:
@@ -165,6 +215,7 @@ def process_single_tile(tile, saving_dir, osm_dir, zoom_level, chunk_size=500000
         True if successful, False on error.
     """
     logger.info(f"Processing tile: {tile}")
+    sys.stdout.flush()
     saving_dir = os.path.join(saving_dir, f'tile={tile}')
     if not os.path.exists(saving_dir):
         os.makedirs(saving_dir, exist_ok=True)
@@ -223,9 +274,11 @@ def process_single_tile(tile, saving_dir, osm_dir, zoom_level, chunk_size=500000
             chunk_idx += 1
         
         logger.info(f"Completed tile {tile}: {chunk_idx} chunks written")
+        sys.stdout.flush()
         return True
     except Exception as err:
         logger.error(f"Error during tile extraction: {tile}: {err}", exc_info=True)
+        sys.stdout.flush()
         return False
     finally:
         if conn is not None:
@@ -251,6 +304,7 @@ def hive_partition_osm(osm_dir, saving_dir, zoom_level, max_workers, args):
         None. Creates tile-partitioned output structure.
     """
     logger.info(f"Starting hive partitioning of OSM data at zoom level {zoom_level}")
+    sys.stdout.flush()
     
     try:
         logger.debug(f"Discovering unique tiles in {osm_dir}")
@@ -258,6 +312,7 @@ def hive_partition_osm(osm_dir, saving_dir, zoom_level, max_workers, args):
             f"SELECT DISTINCT z{int(zoom_level)}_tiles FROM read_parquet('{osm_dir}/*.parquet')").df()[f"z{int(zoom_level)}_tiles"].tolist()
         logger.info(f"Found {len(tiles_list)} unique tiles to process")
         logger.debug(f"Tiles: {tiles_list[:10]}{'...' if len(tiles_list) > 10 else ''}")
+        sys.stdout.flush()
         
         logger.info(f"Processing tiles with {max_workers} parallel workers")
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -277,6 +332,7 @@ def hive_partition_osm(osm_dir, saving_dir, zoom_level, max_workers, args):
                 failed += 1
         
         logger.info(f"Hive partitioning complete: {completed} tiles processed, {failed} failed")
+        sys.stdout.flush()
     except Exception as err:
         logger.error(f"Error during hive partitioning: {err}", exc_info=True)
 
@@ -306,7 +362,7 @@ def process_file(args):
     Returns:
         urban_filepaths if first file (for geographic layer setup), else None.
     """
-    (filename, is_first, ohsome_osm_dir, osm_saving_dir,
+    (filename, is_first, ohsome_osm_dir, osm_saving_dir, continents_dir, processed_dir,
      zoom_level, continent_filepath, country_filepath,
      continent_filename, country_filename,
      overture_url, ghsl_filename, africapolis_filename,
@@ -316,7 +372,7 @@ def process_file(args):
     if is_first:
         logger.info("Performing one-time geographic layer setup")
         urban_filepaths = layer_intersections(
-            is_first, '../data/processed',
+            is_first, processed_dir, continents_dir,
             continent_filename, country_filename,
             overture_url, ghsl_filename, africapolis_filename
         )
@@ -360,10 +416,12 @@ def main():
     cfg = load_config()
     logger.debug("Configuration loaded")
         
-    ohsome_osm_dir = cfg['paths']["ohsome_osm_dir"]
-    osm_saving_dir = cfg['paths']["osm_saving_dir"]
-    osm_partitioned_dir = cfg['paths']["osm_partitioned_dir"]
-    processed_dir = cfg['paths']['processed_dir']
+    ohsome_osm_dir = os.path.abspath(cfg['paths']["ohsome_osm_dir"])
+    osm_saving_dir = os.path.abspath(cfg['paths']["osm_saving_dir"])
+    osm_partitioned_dir = os.path.abspath(cfg['paths']["osm_partitioned_dir"])
+    processed_dir = os.path.abspath(cfg['paths']['processed_dir'])
+    continents_dir = os.path.abspath(cfg['paths']['continents_dir'])
+
     zoom_level = cfg['params']['zoom_level']
     logger.info(f"Configuration: zoom_level={zoom_level}, ohsome_dir={ohsome_osm_dir}")
     
@@ -380,7 +438,7 @@ def main():
     country_filename = cfg['filenames']['country_filename']
     ghsl_filename = cfg['filenames']['ghsl_filename']
     africapolis_filename = cfg['filenames']['africapolis_filename']
-
+    continents_dir = os.path.abspath(cfg['paths']['continents_dir'])
     country_filepath = os.path.join(processed_dir, f'intersected_{country_filename}')
     
     logger.debug(f"Geographic files: continents={continent_filename}, country={country_filename}")
@@ -395,7 +453,7 @@ def main():
     tasks = [
         (
             f, f==filenames[0],
-            ohsome_osm_dir, osm_saving_dir,
+            ohsome_osm_dir, osm_saving_dir, continents_dir, processed_dir,
             zoom_level, continent_filename, country_filepath,
             continent_filename, country_filename,
             overture_url, ghsl_filename, africapolis_filename,

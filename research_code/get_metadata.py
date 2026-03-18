@@ -17,7 +17,6 @@ import sys
 import os
 import logging
 import random
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import pandas as pd
 import geopandas as gpd
 from metadata_download import get_metadata
@@ -131,7 +130,7 @@ def main():
     batch_size = cfg['metadata_params']['batch_size']
     windows = cfg['metadata_params']['windows']
     max_workers = int(os.environ.get('SLURM_CPUS_PER_TASK', cfg['metadata_params']['max_workers']))
-    data_dir = cfg['paths']['raw_metadata_dir']
+    data_dir = os.path.abspath(cfg['paths']['raw_metadata_dir'])
     args = {k:v for k,v in cfg['metadata_params'].items() if k in [
         'call_limit',
         'empty_data_attempts',
@@ -148,7 +147,7 @@ def main():
     missing_attempts = cfg['metadata_params']['missing_attempts']
     columns = cfg['metadata_columns']
     tiles_col = f'z{zoom_level}_tiles'
-    tiles_filepath = os.path.join(cfg['paths']['completed_tiles_dir'], f'finished_tiles_z{zoom_level}.gpkg')
+    tiles_filepath = os.path.abspath(os.path.join(cfg['paths']['completed_tiles_dir'], f'finished_tiles_z{zoom_level}.gpkg'))
     
     logging.debug(f"Zoom level: {zoom_level}, Tiles file: {tiles_filepath}")
 

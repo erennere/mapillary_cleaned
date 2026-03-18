@@ -427,7 +427,7 @@ def intersections_with_metadata(metadata_filename, continent_filename,
         if os.path.exists(temp_filepath):
             os.remove(temp_filepath)
 
-def layer_intersections(is_first, output_dir,  continents_filename, country_filename, overture_url, 
+def layer_intersections(is_first, output_dir,  continents_dir, continents_filename, country_filename, overture_url, 
                         ghsl_filename, africapolis_filename):
     """Prepare and intersect urban layers with political boundaries.
     
@@ -469,8 +469,6 @@ def layer_intersections(is_first, output_dir,  continents_filename, country_file
         logger.info("Preparing geographic base layers")
         if not os.path.exists(continents_filename):
             logger.info(f"Creating continents layer from shapefiles")
-            continents_dir = os.path.join(output_dir, '..', 'starter_files', 'continents')
-            continents_dir = os.path.abspath(continents_dir)
             logger.debug(f"Looking for continents in: {continents_dir}")
             continent_files = [f for f in os.listdir(continents_dir) if f.endswith('.geojson')]
             continents = ['africa', 'asia', 'europe', 'north_america', 'oceania', 'south_america']
@@ -571,7 +569,7 @@ def main():
     cfg = load_config()
     logger.debug("Configuration loaded")
     
-    root = cfg['paths']['tile_partitioned_parquet_raw_metadata_dir']
+    root = os.path.abspath(cfg['paths']['tile_partitioned_parquet_raw_metadata_dir'])
     
     # Validate input argument
     if len(sys.argv) < 2:
@@ -605,6 +603,7 @@ def main():
     country_filename = cfg['filenames']['country_filename']
     ghsl_filename = cfg['filenames']['ghsl_filename']
     africapolis_filename = cfg['filenames']['africapolis_filename']
+    continents_dir = os.path.abspath(cfg['paths']['continents_dir'])
     logger.debug(f"Filename paths: continents={continents_filename}, country={country_filename}")
 
     ghsl_col_1 = cfg['params']['ghsl_col_1']
@@ -624,16 +623,16 @@ def main():
     
     logger.info("Preparing geographic layers")
     processed_dir = cfg['paths']['processed_dir']
-    urban_filepaths = layer_intersections(is_first, processed_dir,
+    urban_filepaths = layer_intersections(is_first, processed_dir, continents_dir, 
                                            continents_filename, country_filename,
                                             overture_url, ghsl_filename, africapolis_filename)
     logger.debug(f"Urban layer paths prepared: {urban_filepaths}")
   
     # Prepare output directories
-    unfiltered_dir = os.path.join(cfg['paths']['unfiltered_metadata_dir'], f'tile={tile}')
+    unfiltered_dir = os.path.abspath(os.path.join(cfg['paths']['unfiltered_metadata_dir'], f'tile={tile}'))
     filtered_dir = unfiltered_dir.replace('unfiltered', 'filtered')
     unfiltered_filename = os.path.join(unfiltered_dir, f'c_u_{metadata_filename}')
-    filtered_filename = os.path.join(filtered_dir, f'c_u_{metadata_filename.replace("unfiltered", "filtered")}')
+    filtered_filename = unfiltered_filename.replace("unfiltered", "filtered")
     logger.info(f"Output directories: {unfiltered_dir}, {filtered_dir}")
     logger.info(f"Current working directory: {os.getcwd()}")
 

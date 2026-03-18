@@ -30,6 +30,7 @@ paths:
   osm_intersections_dir: "{processed_dir}/mapillary_metadata/spatial_intersections/found_osm_segments"
   osm_nearest_line_dir: "{processed_dir}/mapillary_metadata/spatial_intersections/nearest_lines"
   image_dir: "{data_dir}/images"
+  continents_dir: "{starter_dir}/continents"
 
 filenames:
   starter_polygon_fn: ""
@@ -49,12 +50,12 @@ metadata_params:
   sleep_time: 5
   max_workers: 16
   missing_attempts: 1
-  updated_after: "2025-11-22T18:49:00"
+  updated_after: "2026-03-18T00:49:00"
 
 csv_split_params:
   n_rows: 500000
   split_enabled: true
-  updated_after: "2025-11-22T18:49:00"
+  updated_after: "2026-03-18T00:49:00"
 
 image_params:
   image_size: [256, 427]

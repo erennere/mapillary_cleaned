@@ -68,18 +68,18 @@ if __name__ == '__main__':
     logging.info("Configuration loaded successfully")
 
     zoom_level = cfg['params']['zoom_level']
-    save_dir = cfg['paths']['tiles_save_dir']
+    save_dir = os.path.abspath(cfg['paths']['tiles_save_dir'])
     polygon_filename = cfg['filenames']['starter_polygon_fn']
     logging.debug(f"Zoom level: {zoom_level}, Save directory: {save_dir}")
 
     polygon_filename = polygon_filename if polygon_filename != '' else None
-    polygon_filepath = os.path.join(cfg['paths']['starter_dir'], polygon_filename) if polygon_filename else None
+    polygon_filepath = os.path.abspath(os.path.join(cfg['paths']['starter_dir'], polygon_filename)) if polygon_filename else None
 
     # Try to load country-specific polygon
     polygon = None
     try:
         polygon_filename = cfg['filenames']['country_filename']
-        polygon_filepath = os.path.join(cfg['paths']['starter_dir'], polygon_filename) if polygon_filename else None
+        polygon_filepath = os.path.abspath(os.path.join(cfg['paths']['starter_dir'], polygon_filename)) if polygon_filename else None
         logging.info(f"Attempting to load polygon from {polygon_filepath}")
         polygon = gpd.read_parquet(polygon_filepath)
         polygon = polygon[polygon['country'] == 'MG'].geometry.values[0]
@@ -96,6 +96,8 @@ if __name__ == '__main__':
     # Generate tiles
     logging.info("Generating tiles from polygon")
     tiles_gdf = get_tiles_from_polygon(polygon=polygon, zoom_level=zoom_level)
+    import numpy as np
+    tiles_gdf = tiles_gdf.iloc[np.random.randint(0, len(tiles_gdf), size=100)]
     
     # Save to file
     output_filepath = os.path.join(save_dir, f'tiles_z{zoom_level}.gpkg')

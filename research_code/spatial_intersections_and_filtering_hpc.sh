@@ -61,9 +61,10 @@ print(f'export DATA_DIR=\"{tile_partitioned_dir}\"')
 print(f'export ZOOM_LEVEL={cfg[\"params\"][\"zoom_level\"]}')
 print(f'export URBAN_THRESHOLD={cfg[\"params\"][\"urban_threshold\"]}')
 print(f'export RURAL_THRESHOLD={cfg[\"params\"][\"rural_threshold\"]}')
+print(f'export UPDATED_AFTER=\"{cfg[\"csv_split_params\"][\"updated_after\"]}\"')
 ")
 
-echo "DEBUG: DATA_DIR='$DATA_DIR', ZOOM_LEVEL=$ZOOM_LEVEL, URBAN_THRESHOLD=$URBAN_THRESHOLD, RURAL_THRESHOLD=$RURAL_THRESHOLD"
+echo "DEBUG: DATA_DIR='$DATA_DIR', ZOOM_LEVEL=$ZOOM_LEVEL, URBAN_THRESHOLD=$URBAN_THRESHOLD, RURAL_THRESHOLD=$RURAL_THRESHOLD, UPDATED_AFTER='$UPDATED_AFTER'"
 
 # Extract exclude patterns (optional)
 EXCLUDE_PATTERNS="example_to_skip,bad_file_prefix"
@@ -73,7 +74,7 @@ EXCLUDE_PATTERNS="example_to_skip,bad_file_prefix"
 # ————————————————————————
 EXCLUDE_REGEX=$(echo "$EXCLUDE_PATTERNS" | sed 's/,/|/g')
 mapfile -t files < <(
-    find "$DATA_DIR" -type f -name "*.parquet" \
+    find "$DATA_DIR" -type f -name "*.parquet" -newermt "$UPDATED_AFTER" \
     | grep -E "tile=" \
     | grep -Ev "$EXCLUDE_REGEX" \
     | sort
