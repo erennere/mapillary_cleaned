@@ -1,0 +1,84 @@
+params:
+  zoom_level: 8
+  mly_key: "MLY|7528238413968457|ed14c6e38679af952a575dbf5ef5ffcf"
+  n_max_rows_parquet: 500000
+  urban_threshold: 100
+  rural_threshold: 1000
+  ghsl_col_1: ".ID_UC_G0"
+  ghsl_col_2: ".GC_UCN_MAI_2025"
+  africapolis_col_1: ".agglosID"
+  africapolis_col_2: ".agglosName"
+  earth_radius: 6371008
+  distance_threshold: 30
+  threshold_1: 10
+  threshold_2: 20
+
+paths:
+  data_dir: "../data"
+  processed_dir: "{data_dir}/processed"
+  starter_dir: "{data_dir}/starter_files"
+  tiles_save_dir: "{processed_dir}/tiles"
+  completed_tiles_dir: "{processed_dir}/tiles/completed"
+  failed_tiles_dir: "{processed_dir}/tiles/failed"
+  raw_metadata_dir: "{processed_dir}/mapillary_metadata/raw_metadata"
+  splitted_raw_metadata_dir: "{processed_dir}/mapillary_metadata/splitted_raw_metadata"
+  tile_partitioned_parquet_raw_metadata_dir: "{processed_dir}/mapillary_metadata/hive_partitioned_raw_metadata"
+  unfiltered_metadata_dir: "{processed_dir}/mapillary_metadata/spatial_intersections/intersected_unfiltered_metadata"
+  ohsome_osm_dir: "D:/work-heigit/mapillary_cleaned"
+  osm_saving_dir: "{data_dir}/osm_data/ohsome_data"
+  osm_partitioned_dir: "{data_dir}/osm_data/hive_partitioned_osm_data"
+  osm_intersections_dir: "{processed_dir}/mapillary_metadata/spatial_intersections/found_osm_segments"
+  osm_nearest_line_dir: "{processed_dir}/mapillary_metadata/spatial_intersections/nearest_lines"
+  image_dir: "{data_dir}/images"
+
+filenames:
+  starter_polygon_fn: ""
+  continents_filename: "{processed_dir}/continents.parquet"
+  overture_url: "s3://overturemaps-us-west-2/release/2025-01-22.0"
+  country_filename: "overture_divisions.parquet"
+  ghsl_filename: "GHS_UCDB_GLOBE_R2024A.gpkg"
+  africapolis_filename: "AFRICAPOLIS2020.shp"
+
+metadata_params:
+  retries: 5
+  batch_size: 100
+  windows: true
+  call_limit: 5
+  empty_data_attempts: 3
+  max_connections: 10000
+  sleep_time: 5
+  max_workers: 16
+  missing_attempts: 1
+  updated_after: "2025-11-22T18:49:00"
+
+csv_split_params:
+  n_rows: 500000
+  split_enabled: true
+  updated_after: "2025-11-22T18:49:00"
+
+image_params:
+  image_size: [256, 427]
+  call_limit: 5
+  sleep_time: 5
+  allowed_connections: 10000
+  max_workers: 16
+  batch_size: 1000
+  windows: false
+  if_metadata: false
+  org_save_true: false
+
+metadata_columns:
+  - sequence
+  - id
+  - thumb_original_url
+  - long
+  - lat
+  - computed_geometry
+  - height
+  - width
+  - altitude
+  - make
+  - model
+  - creator
+  - is_pano
+  - captured_at
