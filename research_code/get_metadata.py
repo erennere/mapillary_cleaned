@@ -53,7 +53,7 @@ def process_single_tile(tile, tiles_gdf, tiles_col, data_dir, metadata_args):
         None. Saves metadata to CSV files in data_dir.
     """
     logging.info(f"Processing tile: {tile}")
-    sequences = tiles_gdf[tiles_gdf[tiles_col]==tile]['id'].unique().tolist()
+    sequences = tiles_gdf[tiles_gdf[tiles_col] == tile]['id'].astype(str).unique().tolist()
     logging.debug(f"Found {len(sequences)} sequences in tile {tile}")
 
     file_unfiltered_metadata = os.path.join(data_dir, f'metadata_unfiltered_{tile}.csv')
@@ -62,15 +62,19 @@ def process_single_tile(tile, tiles_gdf, tiles_col, data_dir, metadata_args):
     # Load previously processed sequences
     if os.path.exists(file_unfiltered_metadata):
         old_metadata = pd.read_csv(file_unfiltered_metadata, usecols=['sequence'])
-        old_sequences = set(old_metadata['sequence'].unique().tolist())
+        old_sequences = set(old_metadata['sequence'].astype(str).unique().tolist())
         logging.debug(f"Tile {tile}: {len(old_sequences)} sequences already processed")
     else:
         old_sequences = set([])
 
     # Filter out already processed ones
-    sequences = [seq for seq in sequences if seq not in old_sequences]
+    sequences = [seq for seq in sequences if str(seq) not in old_sequences]
     logging.info(f"Tile {tile}: {len(sequences)} new sequences to download")
     random.shuffle(sequences)
+
+    if not sequences:
+        logging.info(f"Tile {tile}: no new sequences to download, skipping")
+        return
 
     if os.path.exists(missing_sequences):
         os.remove(missing_sequences)
@@ -131,13 +135,20 @@ def main():
     windows = cfg['metadata_params']['windows']
     max_workers = int(os.environ.get('SLURM_CPUS_PER_TASK', cfg['metadata_params']['max_workers']))
     data_dir = os.path.abspath(cfg['paths']['raw_metadata_dir'])
-    args = {k:v for k,v in cfg['metadata_params'].items() if k in [
+    params = {k:v for k,v in cfg['metadata_params'].items() if k in [
         'call_limit',
         'empty_data_attempts',
         'retries',
         'max_connections',
         'sleep_time'
     ]}
+
+    monitoring = {
+        'monitor_interval': cfg['metadata_params'].get('monitor_interval', 10),
+        'monitor_check_timeout': cfg['metadata_params'].get('monitor_check_timeout', 10),
+        'write_interval': cfg['metadata_params'].get('write_interval', 300),
+        'write_check_timeout': cfg['metadata_params'].get('write_check_timeout', 10)
+    }
     
     logging.debug(f"Batch size: {batch_size}, Windows: {windows}, Max workers: {max_workers}")
     logging.debug(f"Output directory: {data_dir}")
@@ -152,12 +163,17 @@ def main():
     logging.debug(f"Zoom level: {zoom_level}, Tiles file: {tiles_filepath}")
 
     metadata_args = {
-        'mly_key' : mly_key,
-        "columns": columns,
-        "args_dict" : args,
-        "max_workers": max_workers,
-        "batch_size":batch_size,
-        "windows": windows
+        'mly_key': mly_key,
+        'columns': columns,
+        'params': params,
+        'job_patterns': [
+            {'pattern': os.path.join(data_dir, 'sequences_*.csv'), 'threshold': cfg['metadata_params'].get('file_age_threshold_seconds', 450)},
+            {'pattern': os.path.join(data_dir, 'metadata_unfiltered_*.csv'), 'threshold': cfg['metadata_params'].get('file_age_threshold_seconds', 450)}
+        ],
+        'max_workers': max_workers,
+        'batch_size': batch_size,
+        'windows': windows,
+        'monitoring': monitoring
     }
     
     if not os.path.exists(tiles_filepath):

@@ -51,6 +51,16 @@ metadata_params:
   max_workers: 16
   missing_attempts: 1
   updated_after: "2026-03-18T00:49:00"
+  query_bbox: [8.657570, 49.392653, 8.707523, 49.420689]
+  metadata_basename: "metadata_unfiltered"
+  missing_basename: "missing_sequences"
+  initial_subdivisions: 100
+  subdivision_factor: 4
+  enable_download: true
+  monitor_interval: 10
+  monitor_check_timeout: 10
+  write_interval: 300
+  write_check_timeout: 10
 
 csv_split_params:
   n_rows: 500000
@@ -67,6 +77,7 @@ image_params:
   windows: false
   if_metadata: false
   org_save_true: false
+  random_seed: 42
 
 metadata_columns:
   - sequence
@@ -83,3 +94,8 @@ metadata_columns:
   - creator
   - is_pano
   - captured_at
+
+# Image download execution configuration
+execution:
+  mode: sequential  # Execution mode: array (HPC only), sequential (default local), parallel
+  num_jobs: 10      # Number of chunks/parallel jobs (default: 10 on HPC, nproc on local)
