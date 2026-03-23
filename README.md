@@ -38,10 +38,12 @@ bash research_code/split_csvs_and_to_parquet_hpc.sh
 bash research_code/spatial_intersections_and_filtering_hpc.sh
 bash research_code/highways_sort_hpc.sh
 bash research_code/find_and_get_nearest_osm_segments.sh
+bash research_code/image_download.sh
 
 # Or submit to HPC cluster
 sbatch research_code/get_sequences_hpc.sh
 sbatch research_code/get_metadata_hpc.sh
+sbatch research_code/image_download.sh
 # ... etc
 ```
 
@@ -59,14 +61,15 @@ sbatch research_code/get_metadata_hpc.sh
 
 ### Stage 2: Metadata Download
 
-**Script:** `get_metadata.py`  
+**Scripts:** `get_metadata.py`, `metadata_download.py`  
 **Automation:** `get_metadata_hpc.sh`
 
-- Downloads image metadata for all sequences
+- `get_metadata.py` orchestrates tile-wise metadata jobs
+- `metadata_download.py` performs sequence discovery + metadata API downloads
 - **Parallel:** 10 deterministic tile chunks processed simultaneously
 - **Resumable:** Skips previously downloaded sequences
 - Retry logic: Configurable attempts (default: 10)
-- Output: CSV files per tile
+- Output: `metadata_unfiltered_<tile>.csv` + `missing_sequences_<tile>.csv`
 
 ### Stage 3: Metadata Processing
 
@@ -128,13 +131,18 @@ sbatch research_code/get_metadata_hpc.sh
 
 ### Stage 7: Image Download
 
-**Script:** `image_download.py`
+**Scripts:** `image_download.py`  
+**Automation:** `image_download.sh`
 
-- Asynchronous multi-threaded downloading
-- Connection pooling & rate limiting
+- Asynchronous batched downloading (aiohttp + OpenCV)
+- Rate-limited requests with background connection replenishment
 - OpenCV image resizing
 - Resumable: Skips previously downloaded images
 - Tile-partitioned output with image IDs
+- Distributed chunk execution via shell launcher:
+  - `array` mode (HPC/SLURM array)
+  - `sequential` mode
+  - `parallel` mode
 
 ## Configuration
 
@@ -160,14 +168,38 @@ params:
 
 metadata_params:
   batch_size: 500
-  windows: 10
+  windows: true
   max_workers: 8
   missing_attempts: 10       # Retries for failed downloads
+  call_limit: 5
+  empty_data_attempts: 3
+  retries: 5
+  max_connections: 10000
+  sleep_time: 5
+  monitor_interval: 10
+  monitor_check_timeout: 10
+  write_interval: 300
+  write_check_timeout: 10
   
 csv_split_params:
   n_rows: 500000             # Rows per CSV chunk
   split_enabled: true
   updated_after: "2024-01-01" # Skip older files (optional)
+
+image_params:
+  image_size: [256, 427]
+  call_limit: 5
+  sleep_time: 5
+  allowed_connections: 10000
+  max_workers: 16
+  batch_size: 1000
+  windows: false
+  org_save_true: false
+  random_seed: 42
+
+execution:
+  mode: sequential           # array (HPC), sequential, parallel
+  num_jobs: 10               # chunks / parallel jobs
 ```
 
 ## Script Details
@@ -178,12 +210,14 @@ csv_split_params:
 |--------|---------|--------------|
 | `create_tiles.py` | Generate XYZ tiles | Mercantile library, polygon restriction support |
 | `get_linestrings_from_tiles.py` | Download sequences | Retry logic (3x), progress tracking, HPC buffer flushing |
-| `get_metadata.py` | Download image metadata | Parallel instances (1-10), resumable, configurable retries |
+| `get_metadata.py` | Tile-level metadata orchestrator | Deterministic chunking (1-10), resumable tile retries |
+| `metadata_download.py` | Sequence + metadata downloader core | Thread-safe buffering, monitoring threads, batched async requests |
 | `csv_to_parquet.py` | CSV → Parquet conversion | WKT→WKB transform, zstd compression, tile awareness |
 | `metadata_intersections_and_filtering.py` | Spatial filtering | One-time setup, urban/rural classification, distance filtering |
 | `highways_sort.py` | OSM highway enrichment | Spatial joins, geographic tagging, tile assignment |
 | `find_osm_segments.py` | Point-to-segment matching | Haversine distance, bbox search, configurable threshold |
 | `get_nearest_osm_segments.py` | Conflict resolution | Multi-match handling, distance indexing |
+| `image_download.py` | Tile image downloader | Async batch processing, rate limiting, resumable missing-image tracking |
 
 ### Bash Automation Scripts
 
@@ -194,12 +228,12 @@ csv_split_params:
 | `spatial_intersections_and_filtering_hpc.sh` | Parallelizes spatial filtering | CPU-aware local / SLURM array on HPC |
 | `highways_sort_hpc.sh` | Parallelizes OSM processing | CPU-aware local / SLURM array on HPC |
 | `find_and_get_nearest_osm_segments.sh` | Runs stages 6A-6B sequentially | Local execution |
+| `image_download.sh` | Distributed image download launcher | Supports array, sequential, and parallel modes |
 
 ### Utility Scripts
 
 - **start.py** - Configuration loader with path normalization
-- **image_download.py** - Mapillary image downloader (legacy, needs update)
-- **metadata_download.py** - Metadata query utility (legacy, needs update)
+- **metadata_download.py** - Metadata query utility used by `get_metadata.py`
 
 ## Recent Improvements & Bug Fixes
 
@@ -212,12 +246,10 @@ csv_split_params:
 ### Current Blockers
 - [ ] HPC compatibility not fully tested on production clusters
 - [ ] OSM source currently uses local SDS intern directory (not S3-backed)
-- [ ] Legacy scripts (`image_download.py`, `metadata_download.py`) need refactoring
 
 ### Enhancements Needed
 - [ ] Parallelize `find_osm_segments.py` via bash wrapper across partitioned folders
 - [ ] Add tracking/ID persistence from highways_sort onwards (resume capability)
-- [ ] Create bash wrapper for `image_download.py` with tile-level parallelization
 - [ ] Integrate S3/Rustfs for OSM planet source
 - [ ] Performance optimization for large-scale continent processing
 
