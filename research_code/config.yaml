@@ -12,6 +12,7 @@ params:
   distance_threshold: 30
   threshold_1: 10
   threshold_2: 20
+  seed: 42
 
 paths:
   data_dir: "../data"
@@ -24,14 +25,17 @@ paths:
   splitted_raw_metadata_dir: "{processed_dir}/mapillary_metadata/splitted_raw_metadata"
   tile_partitioned_parquet_raw_metadata_dir: "{processed_dir}/mapillary_metadata/hive_partitioned_raw_metadata"
   unfiltered_metadata_dir: "{processed_dir}/mapillary_metadata/spatial_intersections/intersected_unfiltered_metadata"
-  ohsome_osm_dir: "D:/work-heigit/mapillary_cleaned"
+  ohsome_osm_dir: ""
   osm_saving_dir: "{data_dir}/osm_data/ohsome_data"
   osm_partitioned_dir: "{data_dir}/osm_data/hive_partitioned_osm_data"
   osm_intersections_dir: "{processed_dir}/mapillary_metadata/spatial_intersections/found_osm_segments"
   osm_nearest_line_dir: "{processed_dir}/mapillary_metadata/spatial_intersections/nearest_lines"
   image_dir: "{data_dir}/images"
   continents_dir: "{starter_dir}/continents"
-
+  final_unfiltered_dir: "{processed_dir}/final_unfiltered_metadata"
+  final_filtered_dir: "{processed_dir}/final_filtered_metadata"
+  stats_dir: "{processed_dir}/stats"
+  
 filenames:
   starter_polygon_fn: ""
   continents_filename: "{processed_dir}/continents.parquet"
@@ -99,3 +103,36 @@ metadata_columns:
 execution:
   mode: sequential  # Execution mode: array (HPC only), sequential (default local), parallel
   num_jobs: 10      # Number of chunks/parallel jobs (default: 10 on HPC, nproc on local)
+
+statistics:
+  shared:
+    highways: [motorway, trunk, primary, secondary, tertiary, unclassified, residential]
+    areas: [urban, rural]
+    road_types: [paved, unpaved]
+    road_classes:
+      motorway: [motorway, motorway_link]
+      trunk: [trunk, trunk_link]
+      primary: [primary, primary_link]
+      secondary: [secondary, secondary_link]
+      tertiary: [tertiary, tertiary_link]
+      unclassified: [unclassified]
+      residential: [residential]
+
+  geographic_layers:
+    osm_distance: 15
+    pred_distance: 10
+    sigma: 1
+    score: 0.8
+    threshold: 0.3
+    max_workers: 8
+    data_input_pattern: data_*.parquet
+    urban_area_layers:
+      - GHS_STAT_UCDB2015MT_GLOBE_R2019A
+      - AFRICAPOLIS2020
+    urban_area_cols: [ID_HDC_G0, agglosID]
+
+  aggregation:
+    urban_layer_cols: [ID_HDC_G0, agglosID]
+    memory_limit_gb: 2010
+    number_of_cpus: 64
+    max_workers: 16
